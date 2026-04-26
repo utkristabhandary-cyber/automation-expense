@@ -1,0 +1,96 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+
+import time
+import pandas as pd
+import re
+from datetime import datetime
+import os
+
+# ================= CONFIG =================
+EXCEL_FILE = "expenses.xlsx"
+CHROME_PROFILE_PATH = r"C:\Users\User\whatsapp_profile"
+
+# ================= CHROME FIX =================
+options = webdriver.ChromeOptions()
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--start-maximized")
+options.add_argument("--remote-debugging-port=9222")
+options.add_argument(f"--user-data-dir={CHROME_PROFILE_PATH}")
+
+driver = webdriver.Chrome(options=options)
+
+driver.get("https://web.whatsapp.com")
+
+print("🚀 Opening WhatsApp Web...")
+time.sleep(15)
+
+input("👉 Open YOUR OWN CHAT manually, then press ENTER...")
+
+# ================= SMART PARSER =================
+def parse_message(text):
+    text = text.lower()
+
+    pattern = r'(\d+)\s+(\w+)\s+(\d+)\s*rs.*total\s*(\d+)'
+    match = re.search(pattern, text)
+
+    if match:
+        return int(match.group(1)), match.group(2), int(match.group(3)), int(match.group(4))
+
+    return None
+
+# ================= SAFE EXCEL =================
+def save_to_excel(data):
+    now = datetime.now()
+
+    new_row = {
+        "Date": now.strftime("%Y-%m-%d"),
+        "Time": now.strftime("%H:%M:%S"),
+        "Item": data[1],
+        "Quantity": data[0],
+        "Price": data[2],
+        "Total": data[3]
+    }
+
+    df = pd.DataFrame([new_row])
+
+    if os.path.exists(EXCEL_FILE):
+        old = pd.read_excel(EXCEL_FILE, engine="openpyxl")
+        df = pd.concat([old, df], ignore_index=True)
+
+    df.to_excel(EXCEL_FILE, index=False, engine="openpyxl")
+    print("✅ Saved:", new_row)
+
+# ================= TRACKING =================
+processed = set()
+
+print("📡 Monitoring messages...")
+
+while True:
+    try:
+        messages = driver.find_elements(
+            By.XPATH,
+            '//div[contains(@class,"message-out")]//span[@dir="ltr"]'
+        )
+
+        for msg in messages:
+            text = msg.text.strip()
+
+            if text and text not in processed:
+                processed.add(text)
+
+                print("📩 New message:", text)
+
+                parsed = parse_message(text)
+
+                if parsed:
+                    save_to_excel(parsed)
+                else:
+                    print("⚠️ Format not matched")
+
+        time.sleep(5)
+
+    except Exception as e:
+        print("❌ Error:", e)
+        time.sleep(5)
